@@ -146,13 +146,16 @@ async def check_availability(
         if request.customer_phone:
             release_customer_locks(db, request.business_id, request.customer_phone)
         
-        # Create new lock (this commits immediately)
+        # Normalize customer phone
+        customer_phone = request.customer_phone or "UNKNOWN"
+        
+        # Create new lock and commit to database
         lock = create_slot_lock(
             db,
             request.business_id,
             start_dt,
             end_dt,
-            request.customer_phone or "UNKNOWN"
+            customer_phone
         )
         
         # Double-check: Verify no conflicting locks were created by another thread
@@ -160,7 +163,7 @@ async def check_availability(
         all_locks = get_active_locks(db, request.business_id)
         conflicting_locks = [
             l for l in all_locks 
-            if l.lock_id != lock.lock_id and l.customer_phone != (request.customer_phone or "UNKNOWN")
+            if l.lock_id != lock.lock_id and l.customer_phone != customer_phone
         ]
         
         # Check if any conflicting lock overlaps with our time window
