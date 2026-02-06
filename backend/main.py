@@ -10,12 +10,33 @@ This module implements the API layer with strict separation of concerns:
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List
 import uuid
 
 from database import get_db, init_db
 from models import BusinessSettings, Appointment, SlotLock, AppointmentStatus, LockState
+
+
+def get_utc_now():
+    """Get current UTC time as timezone-aware datetime"""
+    return datetime.now(timezone.utc)
+
+
+def ensure_timezone_aware(dt: datetime) -> datetime:
+    """
+    Ensure a datetime is timezone-aware, assuming UTC if naive.
+    
+    Args:
+        dt: DateTime that may be naive or aware
+    
+    Returns:
+        Timezone-aware datetime in UTC
+    """
+    if dt.tzinfo is None:
+        # Assume UTC if naive
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 from schemas import (
     AvailabilityCheckRequest, AvailabilityCheckResponse, AvailabilityStatus,
     CreateLockRequest, CreateLockResponse,
@@ -125,14 +146,68 @@ async def check_availability(
         if request.customer_phone:
             release_customer_locks(db, request.business_id, request.customer_phone)
         
-        # Create new lock
+        # Normalize customer phone
+        customer_phone = request.customer_phone or "UNKNOWN"
+        
+        # Create new lock and commit to database
         lock = create_slot_lock(
             db,
             request.business_id,
             start_dt,
             end_dt,
-            request.customer_phone or "UNKNOWN"
+            customer_phone
         )
+        
+        # Double-check: Verify no conflicting locks were created by another thread
+        # This handles the race condition where two threads both passed the initial check
+        all_locks = get_active_locks(db, request.business_id)
+        conflicting_locks = [
+            l for l in all_locks 
+            if l.lock_id != lock.lock_id and l.customer_phone != customer_phone
+        ]
+        
+        # Check if any conflicting lock overlaps with our time window
+        from scheduling_engine import check_overlap
+        has_conflict = False
+        earliest_conflicting_lock = None
+        
+        for other_lock in conflicting_locks:
+            if check_overlap(start_dt, end_dt, other_lock.start_datetime, other_lock.end_datetime):
+                # Use lock creation time as tie-breaker: earlier lock wins
+                if earliest_conflicting_lock is None or ensure_timezone_aware(other_lock.created_at) < ensure_timezone_aware(earliest_conflicting_lock.created_at):
+                    earliest_conflicting_lock = other_lock
+                    has_conflict = True
+        
+        if has_conflict:
+            # Check if our lock was created earlier
+            our_created_at = ensure_timezone_aware(lock.created_at)
+            other_created_at = ensure_timezone_aware(earliest_conflicting_lock.created_at)
+            
+            if other_created_at < our_created_at:
+                # The other lock was created first, so we lose
+                from locking import expire_lock
+                expire_lock(db, lock)
+                
+                # Generate suggested slots
+                suggested = generate_available_slots(
+                    business,
+                    request.requested_datetime,
+                    appointments,
+                    all_locks,
+                    num_slots=5
+                )
+                
+                return AvailabilityCheckResponse(
+                    status=AvailabilityStatus.TEMP_LOCKED,
+                    reason="TEMPORARILY_LOCKED",
+                    suggested_slots=suggested,
+                    lock_id=None,
+                    expires_at=None
+                )
+            else:
+                # We were created first, so we win - expire the other lock
+                from locking import expire_lock
+                expire_lock(db, earliest_conflicting_lock)
         
         return AvailabilityCheckResponse(
             status=AvailabilityStatus.AVAILABLE,
@@ -371,7 +446,7 @@ async def cancel_appointment(
     
     # Cancel appointment
     appointment.status = AppointmentStatus.CANCELLED
-    appointment.updated_at = datetime.utcnow()
+    appointment.updated_at = get_utc_now()
     
     db.commit()
     
@@ -401,9 +476,11 @@ async def list_appointments(
         query = query.filter(Appointment.status == AppointmentStatus[status])
     
     if from_date:
+        from_date = ensure_timezone_aware(from_date)
         query = query.filter(Appointment.start_datetime >= from_date)
     
     if to_date:
+        to_date = ensure_timezone_aware(to_date)
         query = query.filter(Appointment.start_datetime <= to_date)
     
     appointments = query.order_by(Appointment.start_datetime).all()
@@ -450,7 +527,7 @@ async def get_dashboard_status(
     ).all()
     
     # Get today's appointments
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = get_utc_now().replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
     
     today_appointments = db.query(Appointment).filter(
@@ -488,7 +565,8 @@ async def get_dashboard_status(
     
     # Add today's appointments
     for apt in confirmed_appointments[:5]:
-        if apt.start_datetime >= today_start and apt.start_datetime < today_end:
+        apt_start = ensure_timezone_aware(apt.start_datetime)
+        if apt_start >= today_start and apt_start < today_end:
             recent_slots.append(SlotInfo(
                 start_datetime=apt.start_datetime,
                 end_datetime=apt.end_datetime,
@@ -536,7 +614,7 @@ async def setup_business(
         existing.slot_duration_minutes = slot_duration_minutes
         existing.buffer_minutes = buffer_minutes
         existing.timezone = timezone
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = get_utc_now()
         db.commit()
         db.refresh(existing)
         business = existing

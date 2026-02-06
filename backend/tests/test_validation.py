@@ -9,7 +9,7 @@ These tests validate the core requirements:
 
 import pytest
 from fastapi.testclient import TestClient
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import threading
@@ -18,6 +18,11 @@ import time
 from main import app, get_db
 from models import Base, BusinessSettings, Appointment, SlotLock
 from database import get_db as get_db_original
+
+
+def get_utc_now():
+    """Get current UTC time as timezone-aware datetime"""
+    return datetime.now(timezone.utc)
 
 
 # Test database setup
@@ -72,7 +77,7 @@ def test_parallel_booking_same_slot(setup_database):
     This validates that double booking is mathematically impossible.
     """
     # Get a future time slot
-    request_time = datetime.utcnow() + timedelta(hours=2)
+    request_time = get_utc_now() + timedelta(hours=2)
     request_time = request_time.replace(minute=0, second=0, microsecond=0)
     
     results = []
@@ -147,7 +152,7 @@ def test_expired_lock_reclaiming(setup_database):
     EXPECTED: After a lock expires, the slot becomes available again.
     """
     # Get a future time slot
-    request_time = datetime.utcnow() + timedelta(hours=3)
+    request_time = get_utc_now() + timedelta(hours=3)
     request_time = request_time.replace(minute=0, second=0, microsecond=0)
     
     # Customer 1 checks availability (creates lock)
@@ -177,7 +182,7 @@ def test_expired_lock_reclaiming(setup_database):
     # Manually expire the lock (simulate time passing)
     db = TestingSessionLocal()
     lock = db.query(SlotLock).filter(SlotLock.lock_id == lock_id).first()
-    lock.expires_at = datetime.utcnow() - timedelta(seconds=1)
+    lock.expires_at = get_utc_now() - timedelta(seconds=1)
     db.commit()
     db.close()
     
@@ -203,7 +208,7 @@ def test_booking_after_cancellation(setup_database):
     EXPECTED: After cancellation, the slot becomes available for rebooking.
     """
     # Get a future time slot
-    request_time = datetime.utcnow() + timedelta(hours=4)
+    request_time = get_utc_now() + timedelta(hours=4)
     request_time = request_time.replace(minute=0, second=0, microsecond=0)
     
     # Customer 1 books a slot
@@ -271,7 +276,7 @@ def test_buffer_time_collision(setup_database):
     
     EXPECTED: Appointments respect buffer time between slots.
     """
-    base_time = datetime.utcnow() + timedelta(hours=5)
+    base_time = get_utc_now() + timedelta(hours=5)
     base_time = base_time.replace(minute=0, second=0, microsecond=0)
     
     # Book first slot
@@ -331,8 +336,8 @@ def test_business_hours_validation(setup_database):
     EXPECTED: Appointments outside business hours are rejected.
     """
     # Try to book before opening (8 AM when business opens at 9 AM)
-    before_opening = datetime.utcnow().replace(hour=8, minute=0, second=0, microsecond=0)
-    if before_opening < datetime.utcnow():
+    before_opening = get_utc_now().replace(hour=8, minute=0, second=0, microsecond=0)
+    if before_opening < get_utc_now():
         before_opening += timedelta(days=1)
     
     response1 = client.post("/availability/check", json={
@@ -346,8 +351,8 @@ def test_business_hours_validation(setup_database):
     assert "BUSINESS_HOURS" in response1.json()["reason"]
     
     # Try to book after closing (5 PM when business closes at 5 PM)
-    after_closing = datetime.utcnow().replace(hour=17, minute=0, second=0, microsecond=0)
-    if after_closing < datetime.utcnow():
+    after_closing = get_utc_now().replace(hour=17, minute=0, second=0, microsecond=0)
+    if after_closing < get_utc_now():
         after_closing += timedelta(days=1)
     
     response2 = client.post("/availability/check", json={
