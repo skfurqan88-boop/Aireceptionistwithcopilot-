@@ -10,7 +10,7 @@ This module handles:
 This layer prevents race conditions and ensures atomic operations.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
@@ -20,6 +20,27 @@ from scheduling_engine import calculate_time_window
 
 
 LOCK_TTL_SECONDS = 180  # 3 minutes
+
+
+def get_utc_now():
+    """Get current UTC time as timezone-aware datetime"""
+    return datetime.now(timezone.utc)
+
+
+def ensure_timezone_aware(dt: datetime) -> datetime:
+    """
+    Ensure a datetime is timezone-aware, assuming UTC if naive.
+    
+    Args:
+        dt: DateTime that may be naive or aware
+    
+    Returns:
+        Timezone-aware datetime in UTC
+    """
+    if dt.tzinfo is None:
+        # Assume UTC if naive
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def create_slot_lock(
@@ -45,7 +66,7 @@ def create_slot_lock(
         Created SlotLock instance
     """
     lock_id = str(uuid.uuid4())
-    expires_at = datetime.utcnow() + timedelta(seconds=LOCK_TTL_SECONDS)
+    expires_at = get_utc_now() + timedelta(seconds=LOCK_TTL_SECONDS)
     
     lock = SlotLock(
         lock_id=lock_id,
@@ -82,7 +103,7 @@ def get_active_locks(
     Returns:
         List of active SlotLock instances
     """
-    now = datetime.utcnow()
+    now = get_utc_now()
     
     query = db.query(SlotLock).filter(
         and_(
@@ -122,7 +143,7 @@ def get_customer_active_lock(
     Returns:
         Active SlotLock if exists, None otherwise
     """
-    now = datetime.utcnow()
+    now = get_utc_now()
     
     return db.query(SlotLock).filter(
         and_(
@@ -143,7 +164,7 @@ def expire_lock(db: Session, lock: SlotLock) -> None:
         lock: SlotLock to expire
     """
     lock.state = LockState.EXPIRED
-    lock.updated_at = datetime.utcnow()
+    lock.updated_at = get_utc_now()
     db.commit()
 
 
@@ -156,7 +177,7 @@ def convert_lock(db: Session, lock: SlotLock) -> None:
         lock: SlotLock to convert
     """
     lock.state = LockState.CONVERTED
-    lock.updated_at = datetime.utcnow()
+    lock.updated_at = get_utc_now()
     db.commit()
 
 
@@ -173,7 +194,7 @@ def cleanup_expired_locks(db: Session, business_id: Optional[str] = None) -> int
     Returns:
         Number of locks cleaned up
     """
-    now = datetime.utcnow()
+    now = get_utc_now()
     
     query = db.query(SlotLock).filter(
         and_(
@@ -190,7 +211,7 @@ def cleanup_expired_locks(db: Session, business_id: Optional[str] = None) -> int
     
     for lock in expired_locks:
         lock.state = LockState.EXPIRED
-        lock.updated_at = datetime.utcnow()
+        lock.updated_at = get_utc_now()
     
     db.commit()
     
@@ -208,8 +229,8 @@ def refresh_lock(db: Session, lock: SlotLock) -> SlotLock:
     Returns:
         Updated SlotLock instance
     """
-    lock.expires_at = datetime.utcnow() + timedelta(seconds=LOCK_TTL_SECONDS)
-    lock.updated_at = datetime.utcnow()
+    lock.expires_at = get_utc_now() + timedelta(seconds=LOCK_TTL_SECONDS)
+    lock.updated_at = get_utc_now()
     db.commit()
     db.refresh(lock)
     
@@ -240,7 +261,7 @@ def release_customer_locks(db: Session, business_id: str, customer_phone: str) -
     
     for lock in locks:
         lock.state = LockState.EXPIRED
-        lock.updated_at = datetime.utcnow()
+        lock.updated_at = get_utc_now()
     
     db.commit()
     
@@ -280,8 +301,8 @@ def validate_lock_for_booking(
     if lock.state != LockState.ACTIVE:
         return False, None, f"LOCK_STATE_IS_{lock.state.value}"
     
-    now = datetime.utcnow()
-    if lock.expires_at <= now:
+    now = get_utc_now()
+    if ensure_timezone_aware(lock.expires_at) <= now:
         return False, None, "LOCK_EXPIRED"
     
     return True, lock, "VALID"

@@ -9,10 +9,15 @@ This module defines the core data models:
 
 from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Index
 from sqlalchemy.ext.declarative import declarative_base
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 
 Base = declarative_base()
+
+
+def get_utc_now():
+    """Get current UTC time as timezone-aware datetime"""
+    return datetime.now(timezone.utc)
 
 
 class AppointmentStatus(enum.Enum):
@@ -44,8 +49,8 @@ class BusinessSettings(Base):
     buffer_minutes = Column(Integer, nullable=False, default=15)
     max_parallel_bookings = Column(Integer, nullable=False, default=1)
     timezone = Column(String, nullable=False, default="UTC")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
 
 class Appointment(Base):
@@ -64,8 +69,8 @@ class Appointment(Base):
     start_datetime = Column(DateTime, nullable=False, index=True)
     end_datetime = Column(DateTime, nullable=False, index=True)
     status = Column(SQLEnum(AppointmentStatus), nullable=False, default=AppointmentStatus.PENDING)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     # Composite index for efficient overlap queries
     __table_args__ = (
@@ -88,8 +93,8 @@ class SlotLock(Base):
     customer_phone = Column(String, nullable=False)
     expires_at = Column(DateTime, nullable=False, index=True)
     state = Column(SQLEnum(LockState), nullable=False, default=LockState.ACTIVE)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     # Composite index for efficient lock queries
     __table_args__ = (

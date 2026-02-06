@@ -12,10 +12,31 @@ NO AI LOGIC ALLOWED IN THIS MODULE.
 All functions are stateless and deterministic.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Tuple, Optional
 import pytz
 from models import BusinessSettings, Appointment, SlotLock, AppointmentStatus, LockState
+
+
+def get_utc_now():
+    """Get current UTC time as timezone-aware datetime"""
+    return datetime.now(timezone.utc)
+
+
+def ensure_timezone_aware(dt: datetime) -> datetime:
+    """
+    Ensure a datetime is timezone-aware, assuming UTC if naive.
+    
+    Args:
+        dt: DateTime that may be naive or aware
+    
+    Returns:
+        Timezone-aware datetime in UTC
+    """
+    if dt.tzinfo is None:
+        # Assume UTC if naive
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 def normalize_datetime_to_timezone(dt: datetime, timezone: str) -> datetime:
@@ -89,6 +110,12 @@ def check_overlap(
     Returns:
         True if ranges overlap, False otherwise
     """
+    # Ensure all datetimes are timezone-aware for comparison
+    start1 = ensure_timezone_aware(start1)
+    end1 = ensure_timezone_aware(end1)
+    start2 = ensure_timezone_aware(start2)
+    end2 = ensure_timezone_aware(end2)
+    
     return start1 < end2 and end1 > start2
 
 
@@ -164,11 +191,11 @@ def check_active_locks_overlap(
     Returns:
         True if there's an overlap with another customer's lock, False otherwise
     """
-    now = datetime.utcnow()
+    now = get_utc_now()
     
     for lock in locks:
         # Skip if expired
-        if lock.expires_at < now:
+        if ensure_timezone_aware(lock.expires_at) < now:
             continue
         
         # Skip if not active
