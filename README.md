@@ -20,6 +20,31 @@ This system follows a strict layered architecture:
 
 ## Quick Start
 
+### Option 1: Docker (Recommended)
+
+```bash
+# Clone the repository
+git clone https://github.com/skfurqan88-boop/Aireceptionistwithcopilot-.git
+cd Aireceptionistwithcopilot-
+
+# Configure environment
+cp backend/.env.example .env
+# Edit .env with your configuration
+
+# Start with Docker Compose
+docker-compose up -d
+
+# Initialize database
+docker-compose exec backend python init_db.py
+
+# Access the application
+# Frontend: http://localhost
+# Backend API: http://localhost:8000
+# API Docs: http://localhost:8000/docs
+```
+
+### Option 2: Local Development
+
 ### Backend Setup
 
 ```bash
@@ -49,6 +74,25 @@ AZURE_OPENAI_API_KEY=your_key
 AZURE_OPENAI_DEPLOYMENT=your_deployment
 ```
 
+## Deployment
+
+For production deployment, see **[DEPLOYMENT.md](DEPLOYMENT.md)** for comprehensive guides on:
+
+- Docker deployment
+- Cloud platform deployment (AWS, Azure, GCP)
+- VPS/Dedicated server setup
+- Kubernetes deployment
+- Security best practices
+- Monitoring and scaling
+
+### Quick Production Deploy
+
+```bash
+# Using Docker Compose
+docker-compose up -d
+docker-compose exec backend python init_db.py --business-id=default --timezone=America/New_York
+```
+
 ## API Endpoints
 
 - `POST /availability/check` - Check slot availability
@@ -66,6 +110,25 @@ Run validation tests:
 cd backend
 pytest tests/
 ```
+
+All 5 core validation tests verify:
+1. ✅ Parallel booking prevention (no double booking)
+2. ✅ Expired lock reclaiming
+3. ✅ Booking after cancellation
+4. ✅ Buffer time enforcement
+5. ✅ Business hours validation
+
+## Production Ready
+
+This system is production-ready with:
+- ✅ All tests passing
+- ✅ Docker containerization
+- ✅ CI/CD pipeline (GitHub Actions)
+- ✅ Security best practices
+- ✅ Comprehensive documentation
+- ✅ Health checks and monitoring
+- ✅ Database migration support
+- ✅ Scalable architecture
 
 ## Architecture Details
 
