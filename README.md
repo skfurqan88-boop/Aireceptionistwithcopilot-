@@ -76,7 +76,31 @@ AZURE_OPENAI_DEPLOYMENT=your_deployment
 
 ## Deployment
 
-For production deployment, see **[DEPLOYMENT.md](DEPLOYMENT.md)** for comprehensive guides on:
+### Vercel Deployment (Frontend)
+
+The easiest way to deploy the frontend is using Vercel:
+
+```bash
+# Option 1: Via Vercel Dashboard (Recommended)
+1. Go to vercel.com and import your GitHub repository
+2. Set Root Directory to: frontend
+3. Framework Preset: Create React App
+4. Add Environment Variable: REACT_APP_API_URL=<your-backend-url>
+5. Deploy!
+
+# Option 2: Via Vercel CLI
+cd frontend
+npm install -g vercel
+vercel --prod
+```
+
+**Important**: You need to deploy the backend separately (see below).
+
+For detailed Vercel deployment instructions and troubleshooting, see **[VERCEL_DEPLOYMENT.md](VERCEL_DEPLOYMENT.md)**.
+
+### Full Production Deployment
+
+For production deployment with Docker, cloud platforms, or other options, see **[DEPLOYMENT.md](DEPLOYMENT.md)** for comprehensive guides on:
 
 - Docker deployment
 - Cloud platform deployment (AWS, Azure, GCP)

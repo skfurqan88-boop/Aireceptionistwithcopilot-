@@ -1,0 +1,22 @@
+# Frontend-specific Vercel ignore
+
+# Python backend files
+*.py
+*.pyc
+__pycache__
+venv
+
+# Tests
+*.test.js
+*.spec.js
+__tests__
+test
+
+# Documentation (optional, keep if you want)
+# *.md
+
+# Environment templates (keep .env but exclude secrets)
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
